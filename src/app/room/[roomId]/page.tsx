@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { useGameChannel } from "@/hooks/useGameChannel";
+import { useUser } from "@clerk/nextjs";
 import Canvas from "@/components/Canvas";
 import Chat from "@/components/Chat";
 import Scoreboard from "@/components/Scoreboard";
@@ -20,6 +21,7 @@ function GameRoom() {
   const roomId = params.roomId as string;
   const playerName = searchParams.get("name") || "Player";
   const isCreator = searchParams.get("create") === "true";
+  const { user } = useUser();
 
   const {
     gameState,
@@ -39,7 +41,13 @@ function GameRoom() {
     clearFlag,
     fillEvent,
     undoFlag,
-  } = useGameChannel(roomId, playerName, isCreator);
+  } = useGameChannel(
+    roomId,
+    playerName,
+    isCreator,
+    user?.id ?? null,
+    user?.imageUrl ?? null,
+  );
 
   const { phase, players, currentDrawerIndex, timeRemaining } = gameState;
 

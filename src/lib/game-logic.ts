@@ -15,6 +15,7 @@ export interface Player {
   isHost: boolean;
   avatar: number;
   roundScore: number;
+  imageUrl?: string;
 }
 
 export interface ChatMessage {

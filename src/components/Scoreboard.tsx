@@ -70,9 +70,17 @@ export default function Scoreboard({
               </span>
 
               {/* Avatar */}
-              <span className="text-xl">
-                {AVATARS[player.avatar % AVATARS.length]}
-              </span>
+              {player.imageUrl ? (
+                <img
+                  src={player.imageUrl}
+                  alt={player.name}
+                  className="w-7 h-7 rounded-full object-cover ring-1 ring-primary/30"
+                />
+              ) : (
+                <span className="text-xl">
+                  {AVATARS[player.avatar % AVATARS.length]}
+                </span>
+              )}
 
               {/* Name & status */}
               <div className="flex-1 min-w-0">

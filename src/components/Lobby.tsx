@@ -82,9 +82,17 @@ export default function Lobby({
                   key={p.id}
                   className="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary"
                 >
-                  <span className="text-2xl">
-                    {AVATARS[p.avatar % AVATARS.length]}
-                  </span>
+                  {p.imageUrl ? (
+                    <img
+                      src={p.imageUrl}
+                      alt={p.name}
+                      className="w-8 h-8 rounded-full object-cover ring-2 ring-primary/30"
+                    />
+                  ) : (
+                    <span className="text-2xl">
+                      {AVATARS[p.avatar % AVATARS.length]}
+                    </span>
+                  )}
                   <div>
                     <span className="text-foreground/80 font-medium text-sm">
                       {p.name}

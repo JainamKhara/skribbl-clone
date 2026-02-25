@@ -1,6 +1,7 @@
 "use client";
 
 import { Player, getPlayerRankings } from "@/lib/game-logic";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -153,6 +154,13 @@ export default function GameOver({
           )}
           <Button onClick={onExit} variant="outline" className="w-full">
             🚪 Exit Room
+          </Button>
+          <Button
+            onClick={() => window.open("/leaderboard", "_blank")}
+            variant="ghost"
+            className="w-full text-muted-foreground"
+          >
+            🏆 View Leaderboard
           </Button>
         </div>
       </div>

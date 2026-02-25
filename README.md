@@ -1,6 +1,6 @@
 # 🎨 Skribbl Clone
 
-A real-time multiplayer drawing and guessing game built with **Next.js**, **Supabase Realtime**, and **shadcn/ui**. Draw, guess, and compete with friends — no sign-up required!
+A real-time multiplayer drawing and guessing game built with **Next.js**, **Supabase Realtime**, **Clerk**, and **shadcn/ui**. Draw, guess, and compete with friends!
 
 > Inspired by [skribbl.io](https://skribbl.io)
 
@@ -15,7 +15,12 @@ A real-time multiplayer drawing and guessing game built with **Next.js**, **Supa
 - **Smart scoring** — faster guesses earn more points; drawer earns points based on how many players guess correctly
 - **Multi-round support** — configurable rounds (1–10) and draw time (30–120s)
 
-### 🔗 Multiplayer
+### � Authentication & Identity
+- **Clerk Integration** — Sign in to save your profile and use your real profile image
+- **Guest Support** — Play instantly without an account; guests get random avatars
+- **Profile Synchronization** — Real-time display of player profile images in the lobby and scoreboard
+
+### �🔗 Multiplayer
 - **Room-based system** — create or join rooms with a 6-character code
 - **2–8 players** per room
 - **Real-time sync** — drawing strokes, chat, timer, and game state all broadcast instantly via Supabase channels
@@ -36,12 +41,12 @@ A real-time multiplayer drawing and guessing game built with **Next.js**, **Supa
 
 | Layer | Technology |
 |-------|-----------|
-| **Framework** | [Next.js 16](https://nextjs.org) (App Router) |
-| **Language** | TypeScript |
+| **Framework** | [Next.js](https://nextjs.org) (App Router) |
+| **Authentication** | [Clerk](https://clerk.com) |
+| **Real-time** | [Supabase Realtime](https://supabase.com/docs/guides/realtime) (Broadcast + Presence) |
 | **UI Components** | [shadcn/ui](https://ui.shadcn.com) + [Radix UI](https://radix-ui.com) |
 | **Styling** | [Tailwind CSS v4](https://tailwindcss.com) |
 | **Icons** | [Lucide React](https://lucide.dev) |
-| **Real-time** | [Supabase Realtime](https://supabase.com/docs/guides/realtime) (Broadcast + Presence) |
 | **Canvas** | HTML5 Canvas API |
 
 ---
@@ -51,29 +56,30 @@ A real-time multiplayer drawing and guessing game built with **Next.js**, **Supa
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Landing page (create/join room)
+│   ├── (auth)/                # Clerk login/signup routes
+│   ├── profile/               # User profile settings
 │   ├── room/[roomId]/page.tsx # Game room page
 │   ├── globals.css            # Theme variables (orange light / violet dark)
-│   └── layout.tsx             # Root layout with ThemeProvider
+│   └── layout.tsx             # Root layout with Clerk & Theme providers
 ├── components/
 │   ├── Canvas.tsx             # Drawing canvas with toolbar
 │   ├── Chat.tsx               # Chat & guessing interface
+│   ├── ClerkThemeProvider.tsx  # Dynamic Clerk themes (dark/light)
 │   ├── GameOver.tsx            # Final results with confetti
 │   ├── Lobby.tsx              # Pre-game lobby & settings
 │   ├── RoundEnd.tsx           # Round results display
 │   ├── Scoreboard.tsx         # Player list & scores
 │   ├── Timer.tsx              # Circular countdown timer
 │   ├── WordSelector.tsx       # Word choice modal for drawer
-│   ├── ThemeProvider.tsx      # Dark/Light theme context
 │   ├── ThemeToggle.tsx        # Theme switch button
 │   └── ui/                   # shadcn/ui primitives
 ├── hooks/
-│   └── useGameChannel.ts     # All real-time game logic
-└── lib/
-    ├── constants.ts           # Game & canvas config
-    ├── game-logic.ts          # Scoring, rankings, state types
-    ├── words.ts               # Word list, hints, close-guess detection
-    └── utils.ts               # Utility helpers (cn)
+│   └── useGameChannel.ts     # Core real-time game logic & state
+├── lib/
+│   ├── auth.ts                # Authentication utilities
+│   ├── game-logic.ts          # Scoring & rankings logic
+│   ├── words.ts               # Word list & hint generation
+│   └── supabase.ts            # Supabase client initialization
 ```
 
 ---
@@ -83,7 +89,8 @@ src/
 ### Prerequisites
 
 - [Node.js](https://nodejs.org) 18+
-- A [Supabase](https://supabase.com) project (free tier works)
+- A [Supabase](https://supabase.com) project
+- A [Clerk](https://clerk.com) application
 
 ### 1. Clone & Install
 
@@ -98,12 +105,14 @@ npm install
 Create a `.env.local` file in the project root:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-```
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 
-> You can find these in your Supabase dashboard under **Settings → API**.
-> No database tables are needed — the game uses only Supabase **Realtime Broadcast** and **Presence**.
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your-clerk-publishable-key
+CLERK_SECRET_KEY=your-clerk-secret-key
+```
 
 ### 3. Run the Dev Server
 
@@ -117,13 +126,14 @@ Open [http://localhost:3000](http://localhost:3000) and start playing!
 
 ## 🎯 How to Play
 
-1. **Create a room** — enter your nickname and click "Create Room"
-2. **Share the code** — give the 6-character room code to your friends
-3. **Start the game** — the host configures rounds & draw time, then starts
-4. **Draw** — when it's your turn, pick a word and draw it on the canvas
-5. **Guess** — type your guesses in the chat; you'll get feedback if you're close
-6. **Score** — faster guesses = more points; the drawer earns points too
-7. **Win** — after all rounds, the player with the highest score wins!
+1. **Sign in (Optional)** — Log in with Clerk to use your profile image and save progress.
+2. **Create a room** — Choose your nickname and click "Create Room".
+3. **Share the code** — Give the 6-character room code to your friends.
+4. **Start the game** — The host configures rounds & draw time, then starts.
+5. **Draw** — When it's your turn, pick a word and draw it on the canvas.
+6. **Guess** — Type guesses in the chat; you'll get feedback if you're close!
+7. **Score** — faster guesses = more points; the drawer earns points too
+8. **Win** — The player with the highest score after all rounds wins!
 
 ---
 
@@ -145,6 +155,4 @@ This project is for educational purposes. Feel free to fork and modify!
 
 ---
 
-<p align="center">
-  Built with ❤️ using Next.js & Supabase
-</p>
+

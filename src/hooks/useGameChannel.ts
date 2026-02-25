@@ -15,6 +15,7 @@ import {
 } from "@/lib/game-logic";
 import { getRandomWords, isCloseGuess, getBlankWord, getWordHint } from "@/lib/words";
 import { GAME_CONFIG } from "@/lib/constants";
+import { saveGameResult } from "@/lib/auth";
 
 interface DrawEvent {
   x: number;
@@ -50,7 +51,9 @@ interface UseGameChannelReturn {
 export function useGameChannel(
   roomId: string,
   playerName: string,
-  isCreator: boolean = false
+  isCreator: boolean = false,
+  userId: string | null = null,
+  userImageUrl: string | null = null
 ): UseGameChannelReturn {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -116,7 +119,7 @@ export function useGameChannel(
     []
   );
 
-  const startTurn = useCallback(
+    const startTurn = useCallback(
     (state: GameState) => {
       const words = getRandomWords(GAME_CONFIG.WORD_CHOICES);
       const newState: GameState = {
@@ -135,6 +138,14 @@ export function useGameChannel(
       };
       setGameState(newState);
       broadcastGameState(newState);
+
+      // Send word choices to the drawer (they need them to pick a word)
+      const drawerId = state.players[state.currentDrawerIndex]?.id;
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "word-choices",
+        payload: { drawerId, words },
+      });
 
       channelRef.current?.send({
         type: "broadcast",
@@ -176,6 +187,12 @@ export function useGameChannel(
               timeRemaining: updated.drawTime,
             };
             broadcastGameState(drawingState);
+            // Notify guessers about word length
+            channelRef.current?.send({
+              type: "broadcast",
+              event: "word-chosen",
+              payload: { wordLength: autoWord.length },
+            });
             startDrawingTimer(drawingState);
             return drawingState;
           }
@@ -231,7 +248,23 @@ export function useGameChannel(
         type: "system",
       });
 
-      if (!isGameOver) {
+      if (isGameOver) {
+        // Save game result to database (host only)
+        const ranked = [...updatedPlayers].sort((a, b) => b.score - a.score);
+        saveGameResult({
+          roomId,
+          totalRounds: state.totalRounds,
+          drawTime: state.drawTime,
+          playerCount: updatedPlayers.length,
+          participants: ranked.map((p, i) => ({
+            userId: p.id === myPlayerId ? userId : null,
+            playerName: p.name,
+            score: p.score,
+            rank: i + 1,
+            wordsGuessed: 0,
+          })),
+        }).catch(console.error);
+      } else {
         setTimeout(() => {
           const nextState: GameState = {
             ...endState,
@@ -375,7 +408,14 @@ export function useGameChannel(
     channel.on("broadcast", { event: "player-joined" }, ({ payload }) => {
       const newPlayer = payload as Player;
       setGameState((prev) => {
-        if (prev.players.find((p) => p.id === newPlayer.id)) return prev;
+        const existing = prev.players.find((p) => p.id === newPlayer.id);
+        if (existing) {
+          // Merge update (e.g. imageUrl arriving late from Clerk)
+          const merged = prev.players.map((p) =>
+            p.id === newPlayer.id ? { ...p, ...newPlayer, score: p.score, roundScore: p.roundScore } : p
+          );
+          return { ...prev, players: merged };
+        }
         return { ...prev, players: [...prev.players, newPlayer] };
       });
       addMessage({
@@ -438,19 +478,155 @@ export function useGameChannel(
     channel.on("broadcast", { event: "word-chosen" }, ({ payload }) => {
       const { wordLength } = payload as { wordLength: number };
       setHintText(""); // Clear old hints from previous turn
-      setGameState((prev) => ({
-        ...prev,
-        phase: "drawing",
-        // Non-drawers get a placeholder of the correct length
-        currentWord: "_".repeat(wordLength),
-        wordChoices: [],
-        timeRemaining: prev.drawTime,
-      }));
+      setGameState((prev) => {
+        // If we're the drawer, we already know the word — don't overwrite
+        const currentDrawer = prev.players[prev.currentDrawerIndex];
+        if (currentDrawer?.id === myPlayerId) {
+          return {
+            ...prev,
+            phase: "drawing",
+            wordChoices: [],
+            timeRemaining: prev.drawTime,
+          };
+        }
+        return {
+          ...prev,
+          phase: "drawing",
+          // Non-drawers get a placeholder of the correct length
+          currentWord: "_".repeat(wordLength),
+          wordChoices: [],
+          timeRemaining: prev.drawTime,
+        };
+      });
       addMessage({
         playerName: "System",
         playerId: "system",
         text: `Word chosen! ${wordLength} letters`,
         type: "system",
+      });
+    });
+
+    // Non-host drawers receive word choices to display in the selector
+    channel.on("broadcast", { event: "word-choices" }, ({ payload }) => {
+      const { drawerId, words } = payload as { drawerId: string; words: string[] };
+      // Only the designated drawer should see the word choices
+      if (drawerId === myPlayerId) {
+        setGameState((prev) => ({
+          ...prev,
+          wordChoices: words,
+        }));
+      }
+    });
+
+    // Host receives word choice from a non-host drawer
+    channel.on("broadcast", { event: "drawer-chose-word" }, ({ payload }) => {
+      const { word } = payload as { word: string };
+      if (!isCreator) return; // Only the host processes this
+      clearTimer();
+      const newState: GameState = {
+        ...gameStateRef.current,
+        phase: "drawing",
+        currentWord: word,
+        wordChoices: [],
+        timeRemaining: gameStateRef.current.drawTime,
+      };
+      setGameState(newState);
+      broadcastGameState(newState);
+      channel.send({
+        type: "broadcast",
+        event: "word-chosen",
+        payload: { wordLength: word.length },
+      });
+      startDrawingTimer(newState);
+    });
+
+    // Host validates guess attempts from non-drawers
+    channel.on("broadcast", { event: "guess-attempt" }, ({ payload }) => {
+      const { playerId: guesserId, playerName: guesserName, text } = payload as {
+        playerId: string;
+        playerName: string;
+        text: string;
+      };
+      const gs = gameStateRef.current;
+      // Only the host (room creator) validates guesses — they have the real word
+      if (!isCreator) return;
+      // Only host checks — they know the real word
+      const me = gs.players.find((p) => p.id === guesserId);
+      if (me?.hasGuessedCorrectly) return;
+
+      if (
+        gs.phase === "drawing" &&
+        text.trim().toLowerCase() === gs.currentWord.toLowerCase()
+      ) {
+        const points = calculateGuesserPoints(gs.timeRemaining, gs.drawTime);
+        channel.send({
+          type: "broadcast",
+          event: "correct-guess",
+          payload: { playerId: guesserId, playerName: guesserName, points },
+        });
+        // Also update host's own state
+        setGameState((prev) => ({
+          ...prev,
+          correctGuessers: prev.correctGuessers + 1,
+          players: prev.players.map((p) =>
+            p.id === guesserId
+              ? { ...p, hasGuessedCorrectly: true, score: p.score + points, roundScore: points }
+              : p
+          ),
+        }));
+        addMessage({
+          playerName: "System",
+          playerId: "system",
+          text: `${guesserName} guessed the word! (+${points})`,
+          type: "correct",
+        });
+        // Check if all non-drawers have guessed
+        const updatedPlayers = gs.players.map((p) =>
+          p.id === guesserId ? { ...p, hasGuessedCorrectly: true } : p
+        );
+        const drawer = gs.players[gs.currentDrawerIndex];
+        const allGuessed = updatedPlayers
+          .filter((p) => p.id !== drawer?.id)
+          .every((p) => p.hasGuessedCorrectly);
+        if (allGuessed) {
+          // End turn early — give drawer bonus points
+          const drawerPoints = calculateDrawerPoints(gs.correctGuessers + 1, gs.players.length);
+          setGameState((prev) => ({
+            ...prev,
+            players: prev.players.map((p) =>
+              p.id === drawer?.id
+                ? { ...p, score: p.score + drawerPoints, roundScore: drawerPoints }
+                : p
+            ),
+          }));
+          // Small delay to let state propagate, then end
+          setTimeout(() => endTurn(gameStateRef.current), 500);
+        }
+      } else if (
+        gs.phase === "drawing" &&
+        isCloseGuess(text.trim(), gs.currentWord)
+      ) {
+        // Broadcast close guess back to the guesser
+        channel.send({
+          type: "broadcast",
+          event: "close-guess",
+          payload: { playerId: guesserId, playerName: guesserName, text: text.trim() },
+        });
+      }
+    });
+
+    // Handle close guess notifications
+    channel.on("broadcast", { event: "close-guess" }, ({ payload }) => {
+      const { playerId: guesserId, playerName: guesserName, text: guessText } = payload as {
+        playerId: string;
+        playerName: string;
+        text: string;
+      };
+      addMessage({
+        playerName: guesserName,
+        playerId: guesserId,
+        text: guessText,
+        type: "close",
       });
     });
 
@@ -488,6 +664,7 @@ export function useGameChannel(
             isHost: isCreator,
             avatar: Math.floor(Math.random() * 12),
             roundScore: 0,
+            imageUrl: userImageUrl || undefined,
           };
 
           setGameState((prev) => {
@@ -513,6 +690,28 @@ export function useGameChannel(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, playerName, myPlayerId, isCreator]);
+
+  // Update imageUrl when Clerk user loads (after initial subscription)
+  useEffect(() => {
+    if (!userImageUrl) return;
+    setGameState((prev) => {
+      const updated = prev.players.map((p) =>
+        p.id === myPlayerId ? { ...p, imageUrl: userImageUrl } : p
+      );
+      return { ...prev, players: updated };
+    });
+    // Re-broadcast so other clients see the image
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "player-joined",
+      payload: {
+        id: myPlayerId,
+        name: playerName,
+        imageUrl: userImageUrl,
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userImageUrl]);
 
   const sendDraw = useCallback(
     (event: DrawEvent) => {
@@ -568,66 +767,7 @@ export function useGameChannel(
       const me = current.players.find((p) => p.id === myPlayerId);
       if (me?.hasGuessedCorrectly) return;
 
-      if (
-        current.phase === "drawing" &&
-        trimmed.toLowerCase() === current.currentWord.toLowerCase()
-      ) {
-        const points = calculateGuesserPoints(
-          current.timeRemaining,
-          current.drawTime
-        );
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "correct-guess",
-          payload: {
-            playerId: myPlayerId,
-            playerName,
-            points,
-          },
-        });
-        setGameState((prev) => ({
-          ...prev,
-          correctGuessers: prev.correctGuessers + 1,
-          players: prev.players.map((p) =>
-            p.id === myPlayerId
-              ? { ...p, hasGuessedCorrectly: true, score: p.score + points, roundScore: points }
-              : p
-          ),
-        }));
-        addMessage({
-          playerName: "System",
-          playerId: "system",
-          text: `You guessed the word! (+${points})`,
-          type: "correct",
-        });
-        return;
-      }
-
-      if (
-        current.phase === "drawing" &&
-        isCloseGuess(trimmed, current.currentWord)
-      ) {
-        addMessage({
-          playerName,
-          playerId: myPlayerId,
-          text: trimmed,
-          type: "close",
-        });
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "message",
-          payload: {
-            id: crypto.randomUUID(),
-            playerName,
-            playerId: myPlayerId,
-            text: trimmed,
-            type: "close",
-            timestamp: Date.now(),
-          },
-        });
-        return;
-      }
-
+      // Send the guess as a regular chat message
       const msg: ChatMessage = {
         id: crypto.randomUUID(),
         playerName,
@@ -642,6 +782,19 @@ export function useGameChannel(
         event: "message",
         payload: msg,
       });
+
+      // Also send a guess-attempt for the host to validate
+      if (current.phase === "drawing") {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "guess-attempt",
+          payload: {
+            playerId: myPlayerId,
+            playerName,
+            text: trimmed,
+          },
+        });
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [myPlayerId, playerName, isDrawer, addMessage]
@@ -670,26 +823,38 @@ export function useGameChannel(
 
   const chooseWord = useCallback(
     (word: string) => {
-      clearTimer();
-      const newState: GameState = {
-        ...gameStateRef.current,
-        phase: "drawing",
-        currentWord: word,
-        wordChoices: [],
-        timeRemaining: gameStateRef.current.drawTime,
-      };
-      setGameState(newState);
-      broadcastGameState(newState);
+      if (isCreator) {
+        // Host handles it directly
+        clearTimer();
+        const newState: GameState = {
+          ...gameStateRef.current,
+          phase: "drawing",
+          currentWord: word,
+          wordChoices: [],
+          timeRemaining: gameStateRef.current.drawTime,
+        };
+        setGameState(newState);
+        broadcastGameState(newState);
 
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "word-chosen",
-        payload: { wordLength: word.length },
-      });
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "word-chosen",
+          payload: { wordLength: word.length },
+        });
 
-      startDrawingTimer(newState);
+        startDrawingTimer(newState);
+      } else {
+        // Non-host drawer sends choice to host for processing
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "drawer-chose-word",
+          payload: { word },
+        });
+        // Set the word locally so the drawer can see it, clear word choices UI
+        setGameState((prev) => ({ ...prev, currentWord: word, wordChoices: [] }));
+      }
     },
-    [clearTimer, broadcastGameState, startDrawingTimer]
+    [isCreator, clearTimer, broadcastGameState, startDrawingTimer]
   );
 
   const currentWordDisplay = (() => {
