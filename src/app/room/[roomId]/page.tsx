@@ -83,6 +83,8 @@ function GameRoom() {
           currentWord={gameState.currentWord}
           players={players}
           timeRemaining={timeRemaining}
+          roundHistory={gameState.roundHistory || []}
+          currentRound={gameState.currentRound}
         />
       )}
 

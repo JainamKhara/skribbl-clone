@@ -74,15 +74,7 @@ export default function ProfilePage() {
       <Card className="cyber-card mb-8">
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left mb-6">
-            {user?.imageUrl ? (
-              <img
-                src={user.imageUrl}
-                alt={profile.username}
-                className="w-20 h-20 rounded-full object-cover ring-2 ring-primary/40 shadow-md border-2"
-              />
-            ) : (
-              <Avatar index={profile.avatar_index} name={profile.username} className="w-20 h-20 shadow-md border-2" />
-            )}
+            <Avatar index={profile.avatar_index} name={profile.username} imageUrl={user?.imageUrl} className="w-20 h-20 rounded-full object-cover shadow-md border-2" />
             <div className="space-y-1">
               <h1 className="text-3xl font-black text-foreground tracking-wide uppercase flex items-center justify-center sm:justify-start gap-2">
                 <User className="w-6 h-6 text-primary shrink-0" />

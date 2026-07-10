@@ -78,7 +78,7 @@ export default function GameOver({
 
             return (
               <div key={player.id} className="flex flex-col items-center">
-                <Avatar index={player.avatar} name={player.name} className="w-12 h-12 mb-2" />
+                <Avatar index={player.avatar} name={player.name} imageUrl={player.imageUrl} className="w-12 h-12 mb-2" />
                 <span className="text-xs font-bold text-foreground/80 mb-2 truncate max-w-[90px]">
                   {player.name}
                 </span>
@@ -119,7 +119,7 @@ export default function GameOver({
                   <Badge variant="secondary" className="text-[10px] font-bold">
                     #{i + 4}
                   </Badge>
-                  <Avatar index={player.avatar} name={player.name} className="w-7 h-7" />
+                  <Avatar index={player.avatar} name={player.name} imageUrl={player.imageUrl} className="w-7 h-7" />
                   <span className="flex-1 text-muted-foreground text-sm font-semibold">
                     {player.name}
                   </span>

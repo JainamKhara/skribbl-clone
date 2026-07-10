@@ -80,15 +80,7 @@ export default function Lobby({
                   key={p.id}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl bg-secondary/40 border border-border/30 hover:border-primary/20 transition-all"
                 >
-                  {p.imageUrl ? (
-                    <img
-                      src={p.imageUrl}
-                      alt={p.name}
-                      className="w-9 h-9 rounded-full object-cover ring-2 ring-primary/40"
-                    />
-                  ) : (
-                    <Avatar index={p.avatar} name={p.name} className="w-9 h-9" />
-                  )}
+                  <Avatar index={p.avatar} name={p.name} imageUrl={p.imageUrl} className="w-9 h-9 rounded-full" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-foreground font-semibold text-sm truncate">

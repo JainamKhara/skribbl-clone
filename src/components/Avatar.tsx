@@ -6,9 +6,21 @@ interface AvatarProps {
   index: number;
   name: string;
   className?: string;
+  imageUrl?: string;
 }
 
-export default function Avatar({ index, name, className = "w-8 h-8" }: AvatarProps) {
+export default function Avatar({ index, name, className = "w-8 h-8", imageUrl }: AvatarProps) {
+  // If imageUrl is provided, display the actual image
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt={name}
+        className={`${className} rounded-xl object-cover border-2 border-border/80 shadow-sm`}
+      />
+    );
+  }
+  
   // Deterministic attributes based on the player index
   const baseHue = (index * 73) % 360;
   const secondaryHue = (baseHue + 120) % 360;

@@ -63,15 +63,7 @@ export default function Scoreboard({
               </div>
 
               {/* Avatar */}
-              {player.imageUrl ? (
-                <img
-                  src={player.imageUrl}
-                  alt={player.name}
-                  className="w-8 h-8 rounded-full object-cover ring-2 ring-primary/20"
-                />
-              ) : (
-                <Avatar index={player.avatar} name={player.name} className="w-8 h-8" />
-              )}
+              <Avatar index={player.avatar} name={player.name} imageUrl={player.imageUrl} className="w-8 h-8 rounded-full" />
 
               {/* Name & status */}
               <div className="flex-1 min-w-0">

@@ -10,7 +10,7 @@ import { useUser } from "@clerk/nextjs";
 import { ArrowLeft, Trophy, Crown, Medal } from "lucide-react";
 import Avatar from "@/components/Avatar";
 
-const MEDALS = ["🥇", "🥈", "🥉"];
+const MEDAL_COLORS = ["text-yellow-400", "text-slate-300", "text-amber-600"];
 
 export default function LeaderboardPage() {
   const router = useRouter();
@@ -110,9 +110,7 @@ export default function LeaderboardPage() {
                     {/* Rank */}
                     <div className="w-8 text-center">
                       {entry.rank <= 3 ? (
-                        <span className="text-lg">
-                          {MEDALS[entry.rank - 1]}
-                        </span>
+                        <Medal className={`w-5 h-5 ${MEDAL_COLORS[entry.rank - 1]}`} />
                       ) : (
                         <span className="text-sm font-bold text-muted-foreground">
                           {entry.rank}
