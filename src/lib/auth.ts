@@ -210,24 +210,28 @@ export async function saveGameResult(result: GameResult) {
     }
 
     // 4. Insert round details for comprehensive game history
-    for (const round of result.rounds) {
-      const roundInsert = await sql`
-        INSERT INTO game_rounds (game_id, round_number, word, drawer_name, drawer_id)
-        VALUES (${gameId}, ${round.roundNumber}, ${round.word}, ${round.drawerName}, ${round.drawerId})
-        RETURNING id
-      `;
-      
-      if (roundInsert && roundInsert.length > 0) {
-        const roundId = roundInsert[0].id;
+    try {
+      for (const round of result.rounds) {
+        const roundInsert = await sql`
+          INSERT INTO game_rounds (game_id, round_number, word, drawer_name, drawer_id)
+          VALUES (${gameId}, ${round.roundNumber}, ${round.word}, ${round.drawerName}, ${round.drawerId})
+          RETURNING id
+        `;
         
-        // Insert guessers for this round
-        for (const guesser of round.guessers) {
-          await sql`
-            INSERT INTO round_guessers (round_id, player_name, player_id, points_earned, time_to_guess)
-            VALUES (${roundId}, ${guesser.playerName}, ${guesser.playerId}, ${guesser.pointsEarned}, ${guesser.timeToGuess})
-          `;
+        if (roundInsert && roundInsert.length > 0) {
+          const roundId = roundInsert[0].id;
+          
+          // Insert guessers for this round
+          for (const guesser of round.guessers) {
+            await sql`
+              INSERT INTO round_guessers (round_id, player_name, player_id, points_earned, time_to_guess)
+              VALUES (${roundId}, ${guesser.playerName}, ${guesser.playerId}, ${guesser.pointsEarned}, ${guesser.timeToGuess})
+            `;
+          }
         }
       }
+    } catch (roundsError) {
+      console.warn("Could not save round details (tables may not exist):", roundsError);
     }
   } catch (error) {
     console.error("Failed to save game result:", error);
@@ -353,39 +357,62 @@ export async function getUserGameHistory(
     const gameIds = data.map((row) => row.game_id);
     
     // Get all participants for these games
-    const participantsData = await sql`
-      SELECT game_id, player_name, user_id, score, rank, words_guessed, rounds_won, is_host
-      FROM game_participants
-      WHERE game_id = ANY(${gameIds})
-      ORDER BY rank ASC
-    `;
+    let participantsData: any[] = [];
+    try {
+      const participantsResult = await sql`
+        SELECT game_id, player_name, user_id, score, rank, words_guessed, rounds_won, is_host
+        FROM game_participants
+        WHERE game_id = ANY(${gameIds})
+        ORDER BY rank ASC
+      `;
+      participantsData = participantsResult || [];
+    } catch (e) {
+      console.warn("Error fetching participants:", e);
+      participantsData = [];
+    }
 
-    // Get all rounds for these games
-    const roundsData = await sql`
-      SELECT 
-        gr.id as round_id,
-        gr.game_id,
-        gr.round_number,
-        gr.word,
-        gr.drawer_name,
-        gr.drawer_id
-      FROM game_rounds gr
-      WHERE gr.game_id = ANY(${gameIds})
-      ORDER BY gr.round_number ASC
-    `;
+    // Get all rounds for these games - handle missing table
+    let roundsData: any[] = [];
+    try {
+      const roundsResult = await sql`
+        SELECT 
+          gr.id as round_id,
+          gr.game_id,
+          gr.round_number,
+          gr.word,
+          gr.drawer_name,
+          gr.drawer_id
+        FROM game_rounds gr
+        WHERE gr.game_id = ANY(${gameIds})
+        ORDER BY gr.round_number ASC
+      `;
+      roundsData = roundsResult || [];
+    } catch (e) {
+      console.warn("game_rounds table does not exist yet:", e);
+      roundsData = [];
+    }
 
-    // Get all guessers for these rounds
-    const guessersData = await sql`
-      SELECT 
-        rg.round_id,
-        rg.player_name,
-        rg.player_id,
-        rg.points_earned,
-        rg.time_to_guess
-      FROM round_guessers rg
-      WHERE rg.round_id = ANY(${roundsData.map(r => r.round_id)})
-      ORDER BY rg.points_earned DESC
-    `;
+    // Get all guessers for these rounds - handle missing table
+    let guessersData: any[] = [];
+    try {
+      if (roundsData.length > 0) {
+        const guessersResult = await sql`
+          SELECT 
+            rg.round_id,
+            rg.player_name,
+            rg.player_id,
+            rg.points_earned,
+            rg.time_to_guess
+          FROM round_guessers rg
+          WHERE rg.round_id = ANY(${roundsData.map((r: any) => r.round_id)})
+          ORDER BY rg.points_earned DESC
+        `;
+        guessersData = guessersResult || [];
+      }
+    } catch (e) {
+      console.warn("round_guessers table does not exist yet:", e);
+      guessersData = [];
+    }
 
     return data.map((row) => {
       const parts = (participantsData || [])

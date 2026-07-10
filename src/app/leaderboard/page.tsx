@@ -7,22 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getLeaderboard, LeaderboardEntry } from "@/lib/auth";
 import { useUser } from "@clerk/nextjs";
-import { ArrowLeft, Trophy, Crown } from "lucide-react";
-
-const AVATARS = [
-  "😀",
-  "😎",
-  "🤠",
-  "🥳",
-  "😈",
-  "👻",
-  "🤖",
-  "👽",
-  "🦊",
-  "🐱",
-  "🐸",
-  "🦄",
-];
+import { ArrowLeft, Trophy, Crown, Medal } from "lucide-react";
+import Avatar from "@/components/Avatar";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -76,13 +62,10 @@ export default function LeaderboardPage() {
                 const heights = ["h-32", "h-24", "h-20"];
                 return (
                   <div key={entry.id} className="flex flex-col items-center">
-                    <span className="text-3xl mb-1">
-                      {AVATARS[entry.avatar_index % AVATARS.length]}
-                    </span>
+                    <Avatar index={entry.avatar_index} name={entry.username} className="w-12 h-12 mb-1" />
                     <span className="text-xs font-medium text-foreground/80 truncate max-w-[90px] mb-1">
                       {entry.username}
                     </span>
-                    <span className="text-xl mb-1">{MEDALS[idx]}</span>
                     <div
                       className={`w-24 ${heights[idx]} rounded-t-xl border border-b-0 flex flex-col items-center justify-center ${
                         idx === 0
@@ -92,6 +75,10 @@ export default function LeaderboardPage() {
                             : "bg-warning/15 border-warning/30"
                       }`}
                     >
+                      <Medal className={`w-6 h-6 mb-1 ${
+                        idx === 0 ? "text-yellow-400" :
+                        idx === 1 ? "text-slate-300" : "text-amber-600"
+                      }`} />
                       <span className="text-lg font-bold text-foreground">
                         {entry.total_score.toLocaleString()}
                       </span>
@@ -134,9 +121,7 @@ export default function LeaderboardPage() {
                     </div>
 
                     {/* Avatar */}
-                    <span className="text-2xl">
-                      {AVATARS[entry.avatar_index % AVATARS.length]}
-                    </span>
+                    <Avatar index={entry.avatar_index} name={entry.username} className="w-8 h-8" />
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">

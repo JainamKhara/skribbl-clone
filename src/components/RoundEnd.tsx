@@ -17,7 +17,7 @@ export default function RoundEnd({
   timeRemaining,
 }: RoundEndProps) {
   const scorers = players
-    .filter((p) => p.roundScore > 0)
+    .filter((p) => p.roundScore > 0 || p.hasGuessedCorrectly)
     .sort((a, b) => b.roundScore - a.roundScore);
 
   return (
