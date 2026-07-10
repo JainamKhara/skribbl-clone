@@ -16,6 +16,9 @@ export interface Player {
   avatar: number;
   roundScore: number;
   imageUrl?: string;
+  userId?: string;
+  wordsGuessed: number;
+  roundsWon: number;
 }
 
 export interface ChatMessage {
@@ -25,6 +28,19 @@ export interface ChatMessage {
   text: string;
   type: "guess" | "correct" | "close" | "system" | "chat";
   timestamp: number;
+}
+
+export interface RoundHistory {
+  roundNumber: number;
+  word: string;
+  drawerId: string;
+  drawerName: string;
+  guessers: {
+    playerId: string;
+    playerName: string;
+    pointsEarned: number;
+    timeToGuess: number;
+  }[];
 }
 
 export interface GameState {
@@ -40,6 +56,7 @@ export interface GameState {
   hintsRevealed: number;
   correctGuessers: number;
   turnCount: number;
+  roundHistory: RoundHistory[];
 }
 
 export function createInitialGameState(
@@ -56,10 +73,18 @@ export function createInitialGameState(
     currentWord: "",
     wordChoices: [],
     timeRemaining: drawTime,
-    players: players.map((p) => ({ ...p, score: 0, hasGuessedCorrectly: false, roundScore: 0 })),
+    players: players.map((p) => ({ 
+      ...p, 
+      score: 0, 
+      hasGuessedCorrectly: false, 
+      roundScore: 0,
+      wordsGuessed: 0,
+      roundsWon: 0
+    })),
     hintsRevealed: 0,
     correctGuessers: 0,
     turnCount: 0,
+    roundHistory: [],
   };
 }
 

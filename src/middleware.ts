@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 // Only the profile page requires authentication
 const isProtectedRoute = createRouteMatcher(["/profile(.*)"]);
 
-export default clerkMiddleware(async (auth, request) => {
+export default clerkMiddleware(async (auth: any, request: any) => {
   if (isProtectedRoute(request)) {
     try {
       await auth.protect();

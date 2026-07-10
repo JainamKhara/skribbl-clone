@@ -1,9 +1,7 @@
-
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { RealtimeChannel } from "@supabase/supabase-js";
+import Pusher from "pusher-js";
 import {
   GameState,
   GamePhase,
@@ -12,6 +10,7 @@ import {
   createInitialGameState,
   calculateGuesserPoints,
   calculateDrawerPoints,
+  RoundHistory,
 } from "@/lib/game-logic";
 import { getRandomWords, isCloseGuess, getBlankWord, getWordHint } from "@/lib/words";
 import { GAME_CONFIG } from "@/lib/constants";
@@ -55,7 +54,7 @@ export function useGameChannel(
   userId: string | null = null,
   userImageUrl: string | null = null
 ): UseGameChannelReturn {
-  const channelRef = useRef<RealtimeChannel | null>(null);
+  const channelRef = useRef<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [myPlayerId] = useState(() => crypto.randomUUID());
   const [gameState, setGameState] = useState<GameState>(
@@ -63,6 +62,7 @@ export function useGameChannel(
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const drawListenerRef = useRef<((event: DrawEvent) => void) | null>(null);
+  const drawQueueRef = useRef<DrawEvent[]>([]);
   const [clearFlag, setClearFlag] = useState(0);
   const [fillEvent, setFillEvent] = useState<{ color: string } | null>(null);
   const [undoFlag, setUndoFlag] = useState(0);
@@ -106,21 +106,21 @@ export function useGameChannel(
       // but include it for round-end/game-over so everyone sees the answer
       const hideWord =
         state.phase === "drawing" || state.phase === "choosing-word";
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "game-state",
-        payload: {
-          ...state,
-          currentWord: hideWord ? "" : state.currentWord,
-          wordChoices: [],
-        },
+      channelRef.current?.trigger("client-game-state", {
+        ...state,
+        currentWord: hideWord ? "" : state.currentWord,
+        wordChoices: [],
+        roundHistory: state.roundHistory,
       });
     },
     []
   );
 
-    const startTurn = useCallback(
+  const startTurn = useCallback(
     (state: GameState) => {
+      if (gameStateRef.current.phase === "choosing-word" || gameStateRef.current.phase === "drawing") {
+        return;
+      }
       const words = getRandomWords(GAME_CONFIG.WORD_CHOICES);
       const newState: GameState = {
         ...state,
@@ -141,17 +141,9 @@ export function useGameChannel(
 
       // Send word choices to the drawer (they need them to pick a word)
       const drawerId = state.players[state.currentDrawerIndex]?.id;
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "word-choices",
-        payload: { drawerId, words },
-      });
+      channelRef.current?.trigger("client-word-choices", { drawerId, words });
 
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "clear-canvas",
-        payload: {},
-      });
+      channelRef.current?.trigger("client-clear-canvas", {});
       setClearFlag((f) => f + 1);
 
       addMessage({
@@ -167,11 +159,7 @@ export function useGameChannel(
           const updated = { ...prev, timeRemaining: prev.timeRemaining - 1 };
 
           // Broadcast timer to keep all clients in sync
-          channelRef.current?.send({
-            type: "broadcast",
-            event: "timer-sync",
-            payload: { timeRemaining: updated.timeRemaining },
-          });
+          channelRef.current?.trigger("client-timer-sync", { timeRemaining: updated.timeRemaining });
 
           if (updated.timeRemaining <= 0 && updated.phase === "choosing-word") {
             const autoWord =
@@ -188,11 +176,7 @@ export function useGameChannel(
             };
             broadcastGameState(drawingState);
             // Notify guessers about word length
-            channelRef.current?.send({
-              type: "broadcast",
-              event: "word-chosen",
-              payload: { wordLength: autoWord.length },
-            });
+            channelRef.current?.trigger("client-word-chosen", { wordLength: autoWord.length });
             startDrawingTimer(drawingState);
             return drawingState;
           }
@@ -206,6 +190,9 @@ export function useGameChannel(
 
   const endTurn = useCallback(
     (state: GameState) => {
+      if (gameStateRef.current.phase === "round-end" || gameStateRef.current.phase === "game-over") {
+        return;
+      }
       clearTimer();
       const drawerIdx = state.currentDrawerIndex;
       const drawer = state.players[drawerIdx];
@@ -214,12 +201,45 @@ export function useGameChannel(
         state.players.length
       );
 
+      // Update players with round results
       const updatedPlayers = state.players.map((p) => {
         if (p.id === drawer?.id) {
-          return { ...p, score: p.score + drawerPoints, roundScore: drawerPoints };
+          // Drawer gets points and potentially wins the round
+          const newRoundsWon = p.roundScore > 0 || state.correctGuessers > 0 ? p.roundsWon + 1 : p.roundsWon;
+          return { 
+            ...p, 
+            score: p.score + drawerPoints, 
+            roundScore: drawerPoints,
+            roundsWon: newRoundsWon
+          };
+        }
+        // Update words guessed for players who guessed correctly
+        if (p.hasGuessedCorrectly) {
+          return { ...p, wordsGuessed: p.wordsGuessed + 1 };
         }
         return p;
       });
+
+      // Record this round in history
+      const roundGuessers = state.players
+        .filter(p => p.hasGuessedCorrectly && p.id !== drawer?.id)
+        .map(p => ({
+          playerId: p.id,
+          playerName: p.name,
+          pointsEarned: p.roundScore,
+          timeToGuess: state.timeRemaining
+        }));
+
+      const newRoundHistory: RoundHistory[] = [
+        ...(state.roundHistory || []),
+        {
+          roundNumber: state.currentRound,
+          word: state.currentWord,
+          drawerId: drawer?.id || "",
+          drawerName: drawer?.name || "Unknown",
+          guessers: roundGuessers
+        }
+      ];
 
       const nextDrawerIdx =
         (drawerIdx + 1) % state.players.length;
@@ -233,9 +253,11 @@ export function useGameChannel(
       const endState: GameState = {
         ...state,
         phase: isGameOver ? "game-over" : "round-end",
-        players: updatedPlayers,
+        players: updatedPlayers.map(p => ({ ...p, hasGuessedCorrectly: false, roundScore: 0 })),
         timeRemaining: GAME_CONFIG.ROUND_END_DELAY,
         turnCount: newTurnCount,
+        roundHistory: newRoundHistory,
+        correctGuessers: 0,
       };
 
       setGameState(endState);
@@ -251,18 +273,40 @@ export function useGameChannel(
       if (isGameOver) {
         // Save game result to database (host only)
         const ranked = [...updatedPlayers].sort((a, b) => b.score - a.score);
+        const winner = ranked[0];
+        
+        // Build round history for saving
+        const roundsForSave = (endState.roundHistory || []).map(rh => ({
+          roundNumber: rh.roundNumber,
+          word: rh.word,
+          drawerName: rh.drawerName,
+          drawerId: rh.drawerId,
+          guessers: rh.guessers.map(g => ({
+            playerName: g.playerName,
+            playerId: g.playerId,
+            pointsEarned: g.pointsEarned,
+            timeToGuess: g.timeToGuess
+          }))
+        }));
+
         saveGameResult({
           roomId,
           totalRounds: state.totalRounds,
           drawTime: state.drawTime,
           playerCount: updatedPlayers.length,
+          winnerId: winner?.userId || null,
+          winnerName: winner?.name || "Unknown",
+          winnerScore: winner?.score || 0,
           participants: ranked.map((p, i) => ({
-            userId: p.id === myPlayerId ? userId : null,
+            userId: p.userId || (p.id === myPlayerId ? userId : null),
             playerName: p.name,
             score: p.score,
             rank: i + 1,
-            wordsGuessed: 0,
+            wordsGuessed: p.wordsGuessed || 0,
+            roundsWon: p.roundsWon || 0,
+            isHost: p.isHost || false
           })),
+          rounds: roundsForSave
         }).catch(console.error);
       } else {
         setTimeout(() => {
@@ -277,7 +321,7 @@ export function useGameChannel(
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clearTimer, broadcastGameState, addMessage, startTurn]
+    [clearTimer, broadcastGameState, addMessage, startTurn, myPlayerId, userId, roomId]
   );
 
   const startDrawingTimer = useCallback(
@@ -293,11 +337,7 @@ export function useGameChannel(
           const updated = { ...prev, timeRemaining: prev.timeRemaining - 1 };
 
           // Broadcast timer to keep all clients in sync
-          channelRef.current?.send({
-            type: "broadcast",
-            event: "timer-sync",
-            payload: { timeRemaining: updated.timeRemaining },
-          });
+          channelRef.current?.trigger("client-timer-sync", { timeRemaining: updated.timeRemaining });
 
           if (
             updated.timeRemaining > 0 &&
@@ -312,11 +352,7 @@ export function useGameChannel(
               wordChoices: [],
             });
             // Send the pre-computed hint text so non-drawers display correct letters
-            channelRef.current?.send({
-              type: "broadcast",
-              event: "hint-update",
-              payload: { hintText: computedHint },
-            });
+            channelRef.current?.trigger("client-hint-update", { hintText: computedHint });
             return hinted;
           }
 
@@ -355,73 +391,76 @@ export function useGameChannel(
   );
 
   useEffect(() => {
-    const channel = supabase.channel(`room:${roomId}`, {
-      config: { broadcast: { self: false }, presence: { key: myPlayerId } },
+    if (!process.env.NEXT_PUBLIC_PUSHER_KEY || !process.env.NEXT_PUBLIC_PUSHER_CLUSTER) {
+      console.warn("Pusher client keys are missing");
+      return;
+    }
+
+    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+      authEndpoint: "/api/pusher/auth",
     });
 
+    const channel = pusher.subscribe(`presence-room-${roomId}`);
     channelRef.current = channel;
 
-    channel.on("broadcast", { event: "draw" }, ({ payload }) => {
-      const event = payload as DrawEvent;
-      drawListenerRef.current?.(event);
+    channel.bind("client-draw-batch", (payload: { events: DrawEvent[] }) => {
+      payload.events.forEach((event) => {
+        drawListenerRef.current?.(event);
+      });
     });
 
-    channel.on("broadcast", { event: "clear-canvas" }, () => {
+    channel.bind("client-clear-canvas", () => {
       setClearFlag((f) => f + 1);
     });
 
-    channel.on("broadcast", { event: "fill" }, ({ payload }) => {
-      setFillEvent(payload as { color: string });
+    channel.bind("client-fill", (payload: { color: string }) => {
+      setFillEvent(payload);
     });
 
-    channel.on("broadcast", { event: "undo" }, () => {
+    channel.bind("client-undo", () => {
       setUndoFlag((f) => f + 1);
     });
 
-    channel.on("broadcast", { event: "game-state" }, ({ payload }) => {
-      const state = payload as GameState;
+    channel.bind("client-game-state", (payload: GameState) => {
       setGameState((prev) => ({
-        ...state,
+        ...payload,
         // During round-end/game-over the broadcast includes the actual word;
         // during drawing/choosing it's stripped so we keep the local placeholder
-        currentWord: state.currentWord || prev.currentWord,
+        currentWord: payload.currentWord || prev.currentWord,
       }));
     });
 
     // Timer sync — non-host clients update their timer from host broadcasts
-    channel.on("broadcast", { event: "timer-sync" }, ({ payload }) => {
-      const { timeRemaining } = payload as { timeRemaining: number };
-      setGameState((prev) => ({ ...prev, timeRemaining }));
+    channel.bind("client-timer-sync", (payload: { timeRemaining: number }) => {
+      setGameState((prev) => ({ ...prev, timeRemaining: payload.timeRemaining }));
     });
 
     // Hint update — non-drawers receive pre-computed hint text from the host
-    channel.on("broadcast", { event: "hint-update" }, ({ payload }) => {
-      const { hintText: text } = payload as { hintText: string };
-      setHintText(text);
+    channel.bind("client-hint-update", (payload: { hintText: string }) => {
+      setHintText(payload.hintText);
     });
 
-    channel.on("broadcast", { event: "message" }, ({ payload }) => {
-      const msg = payload as ChatMessage;
-      setMessages((prev) => [...prev, msg]);
+    channel.bind("client-message", (payload: ChatMessage) => {
+      setMessages((prev) => [...prev, payload]);
     });
 
-    channel.on("broadcast", { event: "player-joined" }, ({ payload }) => {
-      const newPlayer = payload as Player;
+    channel.bind("client-player-joined", (payload: Player) => {
       setGameState((prev) => {
-        const existing = prev.players.find((p) => p.id === newPlayer.id);
+        const existing = prev.players.find((p) => p.id === payload.id);
         if (existing) {
           // Merge update (e.g. imageUrl arriving late from Clerk)
           const merged = prev.players.map((p) =>
-            p.id === newPlayer.id ? { ...p, ...newPlayer, score: p.score, roundScore: p.roundScore } : p
+            p.id === payload.id ? { ...p, ...payload, score: p.score, roundScore: p.roundScore } : p
           );
           return { ...prev, players: merged };
         }
-        return { ...prev, players: [...prev.players, newPlayer] };
+        return { ...prev, players: [...prev.players, payload] };
       });
       addMessage({
         playerName: "System",
         playerId: "system",
-        text: `${newPlayer.name} joined the room`,
+        text: `${payload.name} joined the room`,
         type: "system",
       });
 
@@ -429,54 +468,39 @@ export function useGameChannel(
       setTimeout(() => {
         const me = gameStateRef.current.players.find((p) => p.id === myPlayerId);
         if (me) {
-          channel.send({
-            type: "broadcast",
-            event: "player-exists",
-            payload: me,
-          });
+          channel.trigger("client-player-exists", me);
         }
       }, 100);
     });
 
     // When an existing player announces themselves
-    channel.on("broadcast", { event: "player-exists" }, ({ payload }) => {
-      const existingPlayer = payload as Player;
+    channel.bind("client-player-exists", (payload: Player) => {
       setGameState((prev) => {
-        if (prev.players.find((p) => p.id === existingPlayer.id)) return prev;
-        return { ...prev, players: [...prev.players, existingPlayer] };
+        if (prev.players.find((p) => p.id === payload.id)) return prev;
+        return { ...prev, players: [...prev.players, payload] };
       });
     });
 
-    channel.on("broadcast", { event: "player-left" }, ({ payload }) => {
-      const { playerId, playerName } = payload as {
-        playerId: string;
-        playerName: string;
-      };
+    channel.bind("client-player-left", (payload: { playerId: string; playerName: string }) => {
       setGameState((prev) => ({
         ...prev,
-        players: prev.players.filter((p) => p.id !== playerId),
+        players: prev.players.filter((p) => p.id !== payload.playerId),
       }));
       addMessage({
         playerName: "System",
         playerId: "system",
-        text: `${playerName} left the room`,
+        text: `${payload.playerName} left the room`,
         type: "system",
       });
     });
 
-    channel.on("broadcast", { event: "start-game" }, ({ payload }) => {
-      const { rounds, drawTime, players } = payload as {
-        rounds: number;
-        drawTime: number;
-        players: Player[];
-      };
-      const initial = createInitialGameState(players, rounds, drawTime);
+    channel.bind("client-start-game", (payload: { rounds: number; drawTime: number; players: Player[] }) => {
+      const initial = createInitialGameState(payload.players, payload.rounds, payload.drawTime);
       setGameState(initial);
       setMessages([]);
     });
 
-    channel.on("broadcast", { event: "word-chosen" }, ({ payload }) => {
-      const { wordLength } = payload as { wordLength: number };
+    channel.bind("client-word-chosen", (payload: { wordLength: number }) => {
       setHintText(""); // Clear old hints from previous turn
       setGameState((prev) => {
         // If we're the drawer, we already know the word — don't overwrite
@@ -493,7 +517,7 @@ export function useGameChannel(
           ...prev,
           phase: "drawing",
           // Non-drawers get a placeholder of the correct length
-          currentWord: "_".repeat(wordLength),
+          currentWord: "_".repeat(payload.wordLength),
           wordChoices: [],
           timeRemaining: prev.drawTime,
         };
@@ -501,88 +525,83 @@ export function useGameChannel(
       addMessage({
         playerName: "System",
         playerId: "system",
-        text: `Word chosen! ${wordLength} letters`,
+        text: `Word chosen! ${payload.wordLength} letters`,
         type: "system",
       });
     });
 
     // Non-host drawers receive word choices to display in the selector
-    channel.on("broadcast", { event: "word-choices" }, ({ payload }) => {
-      const { drawerId, words } = payload as { drawerId: string; words: string[] };
+    channel.bind("client-word-choices", (payload: { drawerId: string; words: string[] }) => {
       // Only the designated drawer should see the word choices
-      if (drawerId === myPlayerId) {
+      if (payload.drawerId === myPlayerId) {
         setGameState((prev) => ({
           ...prev,
-          wordChoices: words,
+          wordChoices: payload.words,
         }));
       }
     });
 
     // Host receives word choice from a non-host drawer
-    channel.on("broadcast", { event: "drawer-chose-word" }, ({ payload }) => {
-      const { word } = payload as { word: string };
+    channel.bind("client-drawer-chose-word", (payload: { word: string }) => {
       if (!isCreator) return; // Only the host processes this
       clearTimer();
       const newState: GameState = {
         ...gameStateRef.current,
         phase: "drawing",
-        currentWord: word,
+        currentWord: payload.word,
         wordChoices: [],
         timeRemaining: gameStateRef.current.drawTime,
       };
       setGameState(newState);
       broadcastGameState(newState);
-      channel.send({
-        type: "broadcast",
-        event: "word-chosen",
-        payload: { wordLength: word.length },
-      });
+      channel.trigger("client-word-chosen", { wordLength: payload.word.length });
       startDrawingTimer(newState);
     });
 
     // Host validates guess attempts from non-drawers
-    channel.on("broadcast", { event: "guess-attempt" }, ({ payload }) => {
-      const { playerId: guesserId, playerName: guesserName, text } = payload as {
-        playerId: string;
-        playerName: string;
-        text: string;
-      };
+    channel.bind("client-guess-attempt", (payload: { playerId: string; playerName: string; text: string }) => {
       const gs = gameStateRef.current;
       // Only the host (room creator) validates guesses — they have the real word
       if (!isCreator) return;
       // Only host checks — they know the real word
-      const me = gs.players.find((p) => p.id === guesserId);
+      const me = gs.players.find((p) => p.id === payload.playerId);
       if (me?.hasGuessedCorrectly) return;
 
       if (
         gs.phase === "drawing" &&
-        text.trim().toLowerCase() === gs.currentWord.toLowerCase()
+        payload.text.trim().toLowerCase() === gs.currentWord.toLowerCase()
       ) {
         const points = calculateGuesserPoints(gs.timeRemaining, gs.drawTime);
-        channel.send({
-          type: "broadcast",
-          event: "correct-guess",
-          payload: { playerId: guesserId, playerName: guesserName, points },
-        });
+        channel.trigger("client-correct-guess", { playerId: payload.playerId, playerName: payload.playerName, points });
         // Also update host's own state
-        setGameState((prev) => ({
-          ...prev,
-          correctGuessers: prev.correctGuessers + 1,
-          players: prev.players.map((p) =>
-            p.id === guesserId
-              ? { ...p, hasGuessedCorrectly: true, score: p.score + points, roundScore: points }
+        setGameState((prev) => {
+          const updatedPlayers = prev.players.map((p) =>
+            p.id === payload.playerId
+              ? { 
+                  ...p, 
+                  hasGuessedCorrectly: true, 
+                  score: p.score + points, 
+                  roundScore: points,
+                  wordsGuessed: p.wordsGuessed + 1
+                }
               : p
-          ),
-        }));
+          );
+          
+          return {
+            ...prev,
+            correctGuessers: prev.correctGuessers + 1,
+            players: updatedPlayers,
+          };
+        });
         addMessage({
           playerName: "System",
           playerId: "system",
-          text: `${guesserName} guessed the word! (+${points})`,
+          text: `${payload.playerName} guessed the word! (+${points})`,
           type: "correct",
         });
         // Check if all non-drawers have guessed
         const updatedPlayers = gs.players.map((p) =>
-          p.id === guesserId ? { ...p, hasGuessedCorrectly: true } : p
+          p.id === payload.playerId ? { ...p, hasGuessedCorrectly: true } : p
         );
         const drawer = gs.players[gs.currentDrawerIndex];
         const allGuessed = updatedPlayers
@@ -595,159 +614,139 @@ export function useGameChannel(
             ...prev,
             players: prev.players.map((p) =>
               p.id === drawer?.id
-                ? { ...p, score: p.score + drawerPoints, roundScore: drawerPoints }
+                ? { ...p, score: p.score + drawerPoints, roundScore: drawerPoints, roundsWon: p.roundsWon + 1 }
                 : p
             ),
           }));
           // Small delay to let state propagate, then end
           setTimeout(() => endTurn(gameStateRef.current), 500);
         }
-      } else if (
-        gs.phase === "drawing" &&
-        isCloseGuess(text.trim(), gs.currentWord)
-      ) {
-        // Broadcast close guess back to the guesser
-        channel.send({
-          type: "broadcast",
-          event: "close-guess",
-          payload: { playerId: guesserId, playerName: guesserName, text: text.trim() },
-        });
+      } else if (gs.phase === "drawing") {
+        const msg: ChatMessage = {
+          id: crypto.randomUUID(),
+          playerName: payload.playerName,
+          playerId: payload.playerId,
+          text: payload.text.trim(),
+          type: "guess",
+          timestamp: Date.now(),
+        };
+        addMessage(msg);
+        channel.trigger("client-message", msg);
       }
     });
 
-    // Handle close guess notifications
-    channel.on("broadcast", { event: "close-guess" }, ({ payload }) => {
-      const { playerId: guesserId, playerName: guesserName, text: guessText } = payload as {
-        playerId: string;
-        playerName: string;
-        text: string;
-      };
-      addMessage({
-        playerName: guesserName,
-        playerId: guesserId,
-        text: guessText,
-        type: "close",
-      });
-    });
-
-    channel.on("broadcast", { event: "correct-guess" }, ({ payload }) => {
-      const { playerId: guesserId, playerName: guesserName, points } = payload as {
-        playerId: string;
-        playerName: string;
-        points: number;
-      };
+    channel.bind("client-correct-guess", (payload: { playerId: string; playerName: string; points: number }) => {
       setGameState((prev) => ({
         ...prev,
         correctGuessers: prev.correctGuessers + 1,
         players: prev.players.map((p) =>
-          p.id === guesserId
-            ? { ...p, hasGuessedCorrectly: true, score: p.score + points, roundScore: points }
+          p.id === payload.playerId
+            ? { 
+                ...p, 
+                hasGuessedCorrectly: true, 
+                score: p.score + payload.points, 
+                roundScore: payload.points,
+                wordsGuessed: p.wordsGuessed + 1
+              }
             : p
         ),
       }));
       addMessage({
         playerName: "System",
         playerId: "system",
-        text: `${guesserName} guessed the word! (+${points})`,
+        text: `${payload.playerName} guessed the word! (+${payload.points})`,
         type: "correct",
       });
     });
 
-    channel
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          const me: Player = {
-            id: myPlayerId,
-            name: playerName,
-            score: 0,
-            hasGuessedCorrectly: false,
-            isHost: isCreator,
-            avatar: Math.floor(Math.random() * 12),
-            roundScore: 0,
-            imageUrl: userImageUrl || undefined,
-          };
+    channel.bind("pusher:subscription_succeeded", () => {
+      const me: Player = {
+        id: myPlayerId,
+        name: playerName,
+        score: 0,
+        hasGuessedCorrectly: false,
+        isHost: isCreator,
+        avatar: Math.floor(Math.random() * 12),
+        roundScore: 0,
+        imageUrl: userImageUrl || undefined,
+        userId: userId || undefined,
+        wordsGuessed: 0,
+        roundsWon: 0,
+      };
 
-          setGameState((prev) => {
-            return { ...prev, players: [...prev.players.filter(p => p.id !== myPlayerId), me] };
-          });
-
-          channel.send({
-            type: "broadcast",
-            event: "player-joined",
-            payload: me,
-          });
-        }
+      setGameState((prev) => {
+        return { ...prev, players: [...prev.players.filter(p => p.id !== myPlayerId), me] };
       });
+
+      // Broadcast to other players that we joined
+      channel.trigger("client-player-joined", me);
+    });
 
     return () => {
       clearTimer();
-      channel.send({
-        type: "broadcast",
-        event: "player-left",
-        payload: { playerId: myPlayerId, playerName },
-      });
-      supabase.removeChannel(channel);
+      channel.trigger("client-player-left", { playerId: myPlayerId, playerName });
+      pusher.unsubscribe(`presence-room-${roomId}`);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, playerName, myPlayerId, isCreator]);
 
-  // Update imageUrl when Clerk user loads (after initial subscription)
+  // Update player details when Clerk user loads (after initial subscription)
   useEffect(() => {
-    if (!userImageUrl) return;
+    if (!userId && !userImageUrl) return;
     setGameState((prev) => {
       const updated = prev.players.map((p) =>
-        p.id === myPlayerId ? { ...p, imageUrl: userImageUrl } : p
+        p.id === myPlayerId
+          ? {
+              ...p,
+              imageUrl: userImageUrl || p.imageUrl,
+              userId: userId || p.userId,
+            }
+          : p
       );
       return { ...prev, players: updated };
     });
-    // Re-broadcast so other clients see the image
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "player-joined",
-      payload: {
-        id: myPlayerId,
-        name: playerName,
-        imageUrl: userImageUrl,
-      },
-    });
+    // Re-broadcast so other clients see the updated user details
+    if (channelRef.current) {
+      const me = gameStateRef.current.players.find((p) => p.id === myPlayerId);
+      if (me) {
+        channelRef.current.trigger("client-player-joined", me);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userImageUrl]);
+  }, [userId, userImageUrl]);
 
   const sendDraw = useCallback(
     (event: DrawEvent) => {
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "draw",
-        payload: event,
-      });
+      drawQueueRef.current.push(event);
     },
     []
   );
 
+  // Flush the accumulated drawing events to Pusher every 100ms to stay within client rate limits (max 10/s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (drawQueueRef.current.length > 0 && channelRef.current) {
+        const events = [...drawQueueRef.current];
+        drawQueueRef.current = [];
+        channelRef.current.trigger("client-draw-batch", { events });
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const sendClearCanvas = useCallback(() => {
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "clear-canvas",
-      payload: {},
-    });
+    channelRef.current?.trigger("client-clear-canvas", {});
     setClearFlag((f) => f + 1);
   }, []);
 
   const sendFill = useCallback((color: string) => {
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "fill",
-      payload: { color },
-    });
+    channelRef.current?.trigger("client-fill", { color });
     setFillEvent({ color });
   }, []);
 
   const sendUndo = useCallback(() => {
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "undo",
-      payload: {},
-    });
+    channelRef.current?.trigger("client-undo", {});
     setUndoFlag((f) => f + 1);
   }, []);
 
@@ -767,37 +766,99 @@ export function useGameChannel(
       const me = current.players.find((p) => p.id === myPlayerId);
       if (me?.hasGuessedCorrectly) return;
 
-      // Send the guess as a regular chat message
-      const msg: ChatMessage = {
-        id: crypto.randomUUID(),
-        playerName,
-        playerId: myPlayerId,
-        text: trimmed,
-        type: "guess",
-        timestamp: Date.now(),
-      };
-      addMessage(msg);
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "message",
-        payload: msg,
-      });
+      // If we are the creator/host, validate our guess locally!
+      if (isCreator) {
+        if (
+          current.phase === "drawing" &&
+          trimmed.toLowerCase() === current.currentWord.toLowerCase()
+        ) {
+          const points = calculateGuesserPoints(current.timeRemaining, current.drawTime);
+          channelRef.current?.trigger("client-correct-guess", {
+            playerId: myPlayerId,
+            playerName,
+            points,
+          });
+          setGameState((prev) => {
+            const updatedCorrectCount = prev.correctGuessers + 1;
+            const updatedPlayers = prev.players.map((p) =>
+              p.id === myPlayerId
+                ? { 
+                    ...p, 
+                    hasGuessedCorrectly: true, 
+                    score: p.score + points, 
+                    roundScore: points,
+                    wordsGuessed: p.wordsGuessed + 1
+                  }
+                : p
+            );
+            
+            // Check if all non-drawers have guessed correctly
+            const drawer = prev.players[prev.currentDrawerIndex];
+            const allGuessed = updatedPlayers
+              .filter((p) => p.id !== drawer?.id)
+              .every((p) => p.hasGuessedCorrectly);
 
-      // Also send a guess-attempt for the host to validate
-      if (current.phase === "drawing") {
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "guess-attempt",
-          payload: {
+            if (allGuessed) {
+              const drawerPoints = calculateDrawerPoints(updatedCorrectCount, prev.players.length);
+              const playersWithDrawerPoints = updatedPlayers.map((p) =>
+                p.id === drawer?.id
+                  ? { 
+                      ...p, 
+                      score: p.score + drawerPoints, 
+                      roundScore: drawerPoints,
+                      roundsWon: p.roundsWon + 1
+                    }
+                  : p
+              );
+              
+              const nextState = {
+                ...prev,
+                correctGuessers: updatedCorrectCount,
+                players: playersWithDrawerPoints,
+              };
+              
+              setTimeout(() => endTurn(nextState), 500);
+              return nextState;
+            }
+
+            return {
+              ...prev,
+              correctGuessers: updatedCorrectCount,
+              players: updatedPlayers,
+            };
+          });
+
+          addMessage({
+            playerName: "System",
+            playerId: "system",
+            text: `${playerName} guessed the word! (+${points})`,
+            type: "correct",
+          });
+        } else if (current.phase === "drawing") {
+          const msg: ChatMessage = {
+            id: crypto.randomUUID(),
+            playerName,
+            playerId: myPlayerId,
+            text: trimmed,
+            type: "guess",
+            timestamp: Date.now(),
+          };
+          addMessage(msg);
+          channelRef.current?.trigger("client-message", msg);
+        }
+      } else {
+        // If we are a normal player, send it to the host to validate
+        if (current.phase === "drawing") {
+          channelRef.current?.trigger("client-guess-attempt", {
             playerId: myPlayerId,
             playerName,
             text: trimmed,
-          },
-        });
+          });
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [myPlayerId, playerName, isDrawer, addMessage]
+    [myPlayerId, playerName, isDrawer, isCreator, addMessage, endTurn]
   );
 
   const startGame = useCallback(
@@ -805,11 +866,7 @@ export function useGameChannel(
       const shuffled = [...gameState.players].sort(() => Math.random() - 0.5);
       const initial = createInitialGameState(shuffled, rounds, drawTime);
 
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "start-game",
-        payload: { rounds, drawTime, players: shuffled },
-      });
+      channelRef.current?.trigger("client-start-game", { rounds, drawTime, players: shuffled });
 
       setGameState(initial);
       setMessages([]);
@@ -836,20 +893,12 @@ export function useGameChannel(
         setGameState(newState);
         broadcastGameState(newState);
 
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "word-chosen",
-          payload: { wordLength: word.length },
-        });
+        channelRef.current?.trigger("client-word-chosen", { wordLength: word.length });
 
         startDrawingTimer(newState);
       } else {
         // Non-host drawer sends choice to host for processing
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "drawer-chose-word",
-          payload: { word },
-        });
+        channelRef.current?.trigger("client-drawer-chose-word", { word });
         // Set the word locally so the drawer can see it, clear word choices UI
         setGameState((prev) => ({ ...prev, currentWord: word, wordChoices: [] }));
       }

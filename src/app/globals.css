@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;600;850&display=swap');
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -7,7 +9,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: 'Outfit', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -52,17 +55,17 @@
 
 /* Custom scrollbar */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0 0 / 20%);
-  border-radius: 99px;
+  background: #2a2c35;
+  border-radius: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0 0 / 35%);
+  background: #ff6b00;
 }
 
 /* Confetti animation */
@@ -92,70 +95,75 @@
   }
 }
 .animate-slideIn {
-  animation: slideIn 0.2s ease-out;
+  animation: slideIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ============================================
    LIGHT THEME — Warm Orange accent
    ============================================ */
 :root {
-  --radius: 0.625rem;
-  --background: #faf7f2;
-  --foreground: #1c1410;
+  --radius: 0.375rem;
+  --background: #fdfbf7;
+  --foreground: #1c1d22;
   --card: #ffffff;
-  --card-foreground: #1c1410;
+  --card-foreground: #1c1d22;
   --popover: #ffffff;
-  --popover-foreground: #1c1410;
-  --primary: #e06820;
+  --popover-foreground: #1c1d22;
+  --primary: #ff6b00;
   --primary-foreground: #ffffff;
-  --secondary: #f0ebe4;
-  --secondary-foreground: #2a1f14;
-  --muted: #f0ebe4;
-  --muted-foreground: #8a7a6a;
-  --accent: #f5ede3;
-  --accent-foreground: #2a1f14;
-  --destructive: #dc2626;
-  --border: #e0d8ce;
-  --input: #e0d8ce;
-  --ring: #e06820;
-  --success: #16a34a;
-  --warning: #d97706;
-  --chart-1: #e06820;
-  --chart-2: #16a34a;
-  --chart-3: #2563eb;
-  --chart-4: #d97706;
-  --chart-5: #dc2626;
+  --secondary: #f3eee3;
+  --secondary-foreground: #1c1d22;
+  --muted: #f3eee3;
+  --muted-foreground: #797c88;
+  --accent: #eae4d5;
+  --accent-foreground: #ff6b00;
+  --destructive: #f43f5e;
+  --border: #dcd6c8;
+  --input: #f3eee3;
+  --ring: #ff6b00;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --chart-1: #ff6b00;
+  --chart-2: #10b981;
+  --chart-3: #3b82f6;
+  --chart-4: #f59e0b;
+  --chart-5: #f43f5e;
+  --grid-bg: #fdfbf7;
+  --grid-dot: #e8e2d4;
 }
 
 /* ============================================
-   DARK THEME — Violet/Purple accent
+   DARK THEME — Retro Cyber-Arcade Comic (NO PURPLE GRADIENTS)
    ============================================ */
 html.dark {
-  --background: #0f0a1a;
-  --foreground: #e8e0f0;
-  --card: #1a1228;
-  --card-foreground: #e8e0f0;
-  --popover: #1a1228;
-  --popover-foreground: #e8e0f0;
-  --primary: #a855f7;
-  --primary-foreground: #ffffff;
-  --secondary: #221838;
-  --secondary-foreground: #e8e0f0;
-  --muted: #221838;
-  --muted-foreground: #9585a8;
-  --accent: #2a1e40;
-  --accent-foreground: #e8e0f0;
-  --destructive: #ef4444;
-  --border: #342850;
-  --input: #342850;
-  --ring: #a855f7;
-  --success: #22c55e;
-  --warning: #eab308;
-  --chart-1: #a855f7;
-  --chart-2: #22c55e;
+  --radius: 0.375rem;
+  --background: #0b0c10;
+  --foreground: #f1f2f5;
+  --card: #13151a;
+  --card-foreground: #f1f2f5;
+  --popover: #13151a;
+  --popover-foreground: #f1f2f5;
+  --primary: #ff6b00;
+  --primary-foreground: #0b0c10;
+  --secondary: #1f222b;
+  --secondary-foreground: #f1f2f5;
+  --muted: #171920;
+  --muted-foreground: #737b8c;
+  --accent: #2c2f3b;
+  --accent-foreground: #ff6b00;
+  --destructive: #f43f5e;
+  --border: #2e323f;
+  --input: #1f222b;
+  --ring: #ff6b00;
+  --success: #00ff66;
+  --warning: #ffd700;
+  --chart-1: #ff6b00;
+  --chart-2: #00ff66;
   --chart-3: #3b82f6;
-  --chart-4: #eab308;
-  --chart-5: #ef4444;
+  --chart-4: #ffd700;
+  --chart-5: #f43f5e;
+  --grid-bg: #0b0c10;
+  --grid-dot: #1c1e24;
 }
 
 @layer base {
@@ -163,6 +171,32 @@ html.dark {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    background-image: 
+      radial-gradient(var(--grid-dot) 1px, transparent 1px), 
+      radial-gradient(var(--grid-dot) 1px, var(--grid-bg) 1px);
+    background-size: 40px 40px;
+    background-position: 0 0, 20px 20px;
+    background-attachment: fixed;
   }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-wide uppercase font-extrabold;
+  }
+}
+
+/* Cyber Arcade Brutalist Cards (offset block shadow, thick borders) */
+.cyber-card {
+  @apply bg-card border-2 border-border shadow-[4px_4px_0px_0px_rgba(255,107,0,0.15)] transition-all duration-200;
+}
+.cyber-card-glow-primary {
+  @apply border-primary/80 shadow-[4px_4px_0px_0px_rgba(255,107,0,0.3)];
+}
+.cyber-card-glow-success {
+  @apply border-success/80 shadow-[4px_4px_0px_0px_rgba(0,255,102,0.3)];
+}
+.cyber-card-glow-warning {
+  @apply border-warning/80 shadow-[4px_4px_0px_0px_rgba(255,215,0,0.3)];
+}
+.arcade-btn {
+  @apply border-2 border-border shadow-[3px_3px_0px_0px_#000] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_0px_#000] transition-all;
 }

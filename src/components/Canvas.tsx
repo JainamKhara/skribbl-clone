@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
+import { Pencil, Eraser, PaintBucket, Undo, Trash } from "lucide-react";
 import { CANVAS_CONFIG, COLORS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -50,6 +51,7 @@ export default function Canvas({
     CANVAS_CONFIG.DEFAULT_BRUSH_SIZE,
   );
   const [tool, setTool] = useState<"pen" | "eraser" | "fill">("pen");
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
   const getCanvasSize = useCallback(() => {
     return { width: 800, height: 600 };
@@ -190,6 +192,30 @@ export default function Canvas({
     [getCanvasSize],
   );
 
+  const updateCursorPreview = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isDrawer || !canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clientX = "touches" in e ? (e.touches[0]?.clientX ?? 0) : e.clientX;
+      const clientY = "touches" in e ? (e.touches[0]?.clientY ?? 0) : e.clientY;
+      setMousePos({
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+      });
+    },
+    [isDrawer],
+  );
+
+  const cursorPreviewSize = (() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return 0;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width) return 0;
+    const scale = 800 / rect.width;
+    const size = tool === "eraser" ? brushSize * 3 : brushSize;
+    return size / scale;
+  })();
+
   const handlePointerDown = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
       if (!isDrawer) return;
@@ -279,7 +305,9 @@ export default function Canvas({
       {/* Canvas */}
       <div
         ref={containerRef}
-        className="relative rounded-xl overflow-hidden shadow-2xl border border-white/10"
+        className={`relative rounded-xl overflow-hidden cyber-card ${
+          isDrawer ? "cyber-card-glow-primary border-primary/30" : "border-border/55"
+        }`}
       >
         <canvas
           ref={canvasRef}
@@ -291,14 +319,47 @@ export default function Canvas({
                 : "crosshair"
               : "default",
           }}
-          onMouseDown={handlePointerDown}
-          onMouseMove={handlePointerMove}
-          onMouseUp={handlePointerUp}
-          onMouseLeave={handlePointerUp}
-          onTouchStart={handlePointerDown}
-          onTouchMove={handlePointerMove}
-          onTouchEnd={handlePointerUp}
+          onMouseDown={(e) => {
+            handlePointerDown(e);
+            updateCursorPreview(e);
+          }}
+          onMouseMove={(e) => {
+            handlePointerMove(e);
+            updateCursorPreview(e);
+          }}
+          onMouseUp={(e) => {
+            handlePointerUp();
+            updateCursorPreview(e);
+          }}
+          onMouseEnter={updateCursorPreview}
+          onMouseLeave={() => {
+            handlePointerUp();
+            setMousePos(null);
+          }}
+          onTouchStart={(e) => {
+            handlePointerDown(e);
+            updateCursorPreview(e);
+          }}
+          onTouchMove={(e) => {
+            handlePointerMove(e);
+            updateCursorPreview(e);
+          }}
+          onTouchEnd={() => {
+            handlePointerUp();
+            setMousePos(null);
+          }}
         />
+        {isDrawer && mousePos && (tool === "pen" || tool === "eraser") && cursorPreviewSize > 0 && (
+          <div
+            className="absolute rounded-full border border-white pointer-events-none mix-blend-difference"
+            style={{
+              width: `${cursorPreviewSize}px`,
+              height: `${cursorPreviewSize}px`,
+              left: `${mousePos.x - cursorPreviewSize / 2}px`,
+              top: `${mousePos.y - cursorPreviewSize / 2}px`,
+            }}
+          />
+        )}
         {!isDrawer && (
           <div
             className="absolute inset-0 z-10"
@@ -354,22 +415,25 @@ export default function Canvas({
               onClick={() => setTool("pen")}
               variant={tool === "pen" ? "default" : "outline"}
               size="sm"
+              className="gap-1.5"
             >
-              ✏️ Pen
+              <Pencil className="w-3.5 h-3.5" /> Pen
             </Button>
             <Button
               onClick={() => setTool("eraser")}
               variant={tool === "eraser" ? "default" : "outline"}
               size="sm"
+              className="gap-1.5"
             >
-              🧹 Eraser
+              <Eraser className="w-3.5 h-3.5" /> Eraser
             </Button>
             <Button
               onClick={() => setTool("fill")}
               variant={tool === "fill" ? "default" : "outline"}
               size="sm"
+              className="gap-1.5"
             >
-              🪣 Fill
+              <PaintBucket className="w-3.5 h-3.5" /> Fill
             </Button>
           </div>
 
@@ -377,11 +441,11 @@ export default function Canvas({
 
           {/* Actions */}
           <div className="flex gap-1.5">
-            <Button onClick={onUndo} variant="outline" size="sm">
-              ↩️ Undo
+            <Button onClick={onUndo} variant="outline" size="sm" className="gap-1.5">
+              <Undo className="w-3.5 h-3.5" /> Undo
             </Button>
-            <Button onClick={onClear} variant="destructive" size="sm">
-              🗑️ Clear
+            <Button onClick={onClear} variant="destructive" size="sm" className="gap-1.5">
+              <Trash className="w-3.5 h-3.5" /> Clear
             </Button>
           </div>
         </div>
