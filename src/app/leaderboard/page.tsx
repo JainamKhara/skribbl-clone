@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getLeaderboard, LeaderboardEntry } from "@/lib/auth";
+import { getLeaderboard, getOrCreateProfile, LeaderboardEntry } from "@/lib/auth";
 import { useUser } from "@clerk/nextjs";
 import { ArrowLeft, Trophy, Crown, Medal } from "lucide-react";
 import Avatar from "@/components/Avatar";
@@ -24,6 +24,23 @@ export default function LeaderboardPage() {
       setLoading(false);
     });
   }, []);
+
+  // Sync logged-in user details to the database to ensure profile picture is stored
+  useEffect(() => {
+    if (user) {
+      const username =
+        user.firstName ||
+        user.username ||
+        user.emailAddresses[0]?.emailAddress?.split("@")[0] ||
+        "Player";
+      getOrCreateProfile(user.id, username, user.imageUrl).then(() => {
+        // Refresh leaderboard entries to show the latest image
+        getLeaderboard().then((data) => {
+          setEntries(data);
+        });
+      });
+    }
+  }, [user]);
 
   return (
     <main className="min-h-screen p-4 max-w-2xl mx-auto">
@@ -59,10 +76,11 @@ export default function LeaderboardPage() {
               {[1, 0, 2].map((idx) => {
                 const entry = entries[idx];
                 if (!entry) return null;
+                const isMe = user && user.id === entry.id;
                 const heights = ["h-32", "h-24", "h-20"];
                 return (
                   <div key={entry.id} className="flex flex-col items-center">
-                    <Avatar index={entry.avatar_index} name={entry.username} className="w-12 h-12 mb-1" />
+                    <Avatar index={entry.avatar_index} name={entry.username} imageUrl={isMe ? (user?.imageUrl || entry.image_url) : entry.image_url} className="w-12 h-12 mb-1" />
                     <span className="text-xs font-medium text-foreground/80 truncate max-w-[90px] mb-1">
                       {entry.username}
                     </span>
@@ -119,7 +137,7 @@ export default function LeaderboardPage() {
                     </div>
 
                     {/* Avatar */}
-                    <Avatar index={entry.avatar_index} name={entry.username} className="w-8 h-8" />
+                    <Avatar index={entry.avatar_index} name={entry.username} imageUrl={isMe ? (user?.imageUrl || entry.image_url) : entry.image_url} className="w-8 h-8" />
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">

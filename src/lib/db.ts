@@ -18,6 +18,7 @@ export async function initializeDatabase() {
         games_played INTEGER DEFAULT 0,
         games_won INTEGER DEFAULT 0,
         total_score INTEGER DEFAULT 0,
+        image_url VARCHAR(2048),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `);
@@ -78,7 +79,8 @@ export async function initializeDatabase() {
         ADD COLUMN IF NOT EXISTS games_played INTEGER DEFAULT 0,
         ADD COLUMN IF NOT EXISTS games_won INTEGER DEFAULT 0,
         ADD COLUMN IF NOT EXISTS total_score INTEGER DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS image_url VARCHAR(2048)
     `);
 
     await sql(`

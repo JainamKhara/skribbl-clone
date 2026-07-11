@@ -23,11 +23,13 @@ export interface Profile {
   games_won: number;
   total_score: number;
   created_at: string;
+  image_url?: string;
 }
 
 export async function getOrCreateProfile(
   userId: string,
-  username: string
+  username: string,
+  imageUrl?: string
 ): Promise<Profile | null> {
   try {
     await ensureDbInitialized();
@@ -40,12 +42,20 @@ export async function getOrCreateProfile(
     let p;
     if (existing && existing.length > 0) {
       p = existing[0];
+      if (imageUrl && p.image_url !== imageUrl) {
+        await sql`
+          UPDATE profiles
+          SET image_url = ${imageUrl}
+          WHERE id = ${userId}
+        `;
+        p.image_url = imageUrl;
+      }
     } else {
       // Create new profile
       const avatarIndex = Math.floor(Math.random() * 12);
       const created = await sql`
-        INSERT INTO profiles (id, username, avatar_index)
-        VALUES (${userId}, ${username}, ${avatarIndex})
+        INSERT INTO profiles (id, username, avatar_index, image_url)
+        VALUES (${userId}, ${username}, ${avatarIndex}, ${imageUrl || null})
         RETURNING *
       `;
       if (created && created.length > 0) {
@@ -73,6 +83,7 @@ export async function getOrCreateProfile(
         games_won: s.games_won,
         total_score: s.total_score,
         created_at: p.created_at,
+        image_url: p.image_url,
       } as Profile;
     }
     return null;
@@ -110,6 +121,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
         games_won: s.games_won,
         total_score: s.total_score,
         created_at: p.created_at,
+        image_url: p.image_url,
       } as Profile;
     }
     return null;
@@ -139,6 +151,7 @@ export interface GameResult {
     wordsGuessed: number;
     roundsWon: number;
     isHost: boolean;
+    imageUrl?: string | null;
   }[];
   rounds: {
     roundNumber: number;
@@ -175,14 +188,15 @@ export async function saveGameResult(result: GameResult) {
           UPDATE profiles
           SET games_played = ${nextGamesPlayed},
               games_won = ${nextGamesWon},
-              total_score = ${nextTotalScore}
+              total_score = ${nextTotalScore},
+              image_url = COALESCE(${p.imageUrl}, image_url)
           WHERE id = ${p.userId}
         `;
       } else {
         const gamesWon = p.rank === 1 ? 1 : 0;
         await sql`
-          INSERT INTO profiles (id, username, avatar_index, games_played, games_won, total_score)
-          VALUES (${p.userId}, ${p.playerName}, ${Math.floor(Math.random() * 12)}, 1, ${gamesWon}, ${p.score})
+          INSERT INTO profiles (id, username, avatar_index, games_played, games_won, total_score, image_url)
+          VALUES (${p.userId}, ${p.playerName}, ${Math.floor(Math.random() * 12)}, 1, ${gamesWon}, ${p.score}, ${p.imageUrl || null})
         `;
       }
     }
@@ -250,6 +264,7 @@ export interface LeaderboardEntry {
   games_won: number;
   total_score: number;
   rank: number;
+  image_url?: string;
 }
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -257,7 +272,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
     await ensureDbInitialized();
     
     const data = await sql`
-      SELECT id, username, avatar_index, games_played, games_won, total_score
+      SELECT id, username, avatar_index, games_played, games_won, total_score, image_url
       FROM profiles
       WHERE games_played > 0
       ORDER BY total_score DESC
@@ -272,6 +287,7 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
       games_won: entry.games_won,
       total_score: Number(entry.total_score),
       rank: i + 1,
+      image_url: entry.image_url,
     })) as LeaderboardEntry[];
   } catch (error) {
     console.error("Failed to get leaderboard:", error);

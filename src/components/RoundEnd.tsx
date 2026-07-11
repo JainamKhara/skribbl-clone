@@ -23,24 +23,17 @@ export default function RoundEnd({
   // Get the guessers from the most recent round in history
   const currentRoundHistory = roundHistory?.find(r => r.roundNumber === currentRound);
   const guessersFromHistory = currentRoundHistory?.guessers || [];
-  
-  // If we have round history, use it to show guessers
-  // Otherwise fall back to filtering players by roundScore or hasGuessedCorrectly
-  const scorers = guessersFromHistory.length > 0 
-    ? players
-        .filter(p => guessersFromHistory.some(g => g.playerId === p.id))
-        .map(p => {
-          // Find the guesser info for this player
-          const guesserInfo = guessersFromHistory.find(g => g.playerId === p.id);
-          return {
-            ...p,
-            roundScore: guesserInfo?.pointsEarned || p.roundScore || 0
-          };
-        })
-        .sort((a, b) => b.roundScore - a.roundScore)
-    : players
-        .filter((p) => p.roundScore > 0 || p.hasGuessedCorrectly)
-        .sort((a, b) => b.roundScore - a.roundScore);
+
+  // Map all players to show points earned, defaulting to their roundScore (which is set in useGameChannel on turn end)
+  const scorers = players
+    .map((p) => {
+      const guesserInfo = guessersFromHistory.find((g) => g.playerId === p.id);
+      return {
+        ...p,
+        roundScore: guesserInfo?.pointsEarned || p.roundScore || 0
+      };
+    })
+    .sort((a, b) => b.roundScore - a.roundScore);
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 backdrop-blur-md">
@@ -70,7 +63,9 @@ export default function RoundEnd({
                     <Avatar index={p.avatar} name={p.name} imageUrl={p.imageUrl} className="w-7 h-7" />
                     <span className="text-foreground/80 font-semibold text-sm">{p.name}</span>
                   </div>
-                  <span className="text-success font-black text-sm">+{p.roundScore}</span>
+                  <span className={p.roundScore > 0 ? "text-success font-black text-sm" : "text-muted-foreground font-semibold text-sm"}>
+                    {p.roundScore > 0 ? `+${p.roundScore}` : "0"}
+                  </span>
                 </div>
               ))}
             </div>

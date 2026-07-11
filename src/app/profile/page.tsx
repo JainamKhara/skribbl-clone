@@ -36,7 +36,7 @@ export default function ProfilePage() {
         user.emailAddresses[0]?.emailAddress?.split("@")[0] ||
         "Player";
 
-      getOrCreateProfile(user.id, username).then((p) => {
+      getOrCreateProfile(user.id, username, user.imageUrl).then((p) => {
         setProfile(p);
         setLoading(false);
       });
@@ -74,7 +74,7 @@ export default function ProfilePage() {
       <Card className="cyber-card mb-8">
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left mb-6">
-            <Avatar index={profile.avatar_index} name={profile.username} imageUrl={user?.imageUrl} className="w-20 h-20 rounded-full object-cover shadow-md border-2" />
+            <Avatar index={profile.avatar_index} name={profile.username} imageUrl={user?.imageUrl || profile.image_url} className="w-20 h-20 rounded-full object-cover shadow-md border-2" />
             <div className="space-y-1">
               <h1 className="text-3xl font-black text-foreground tracking-wide uppercase flex items-center justify-center sm:justify-start gap-2">
                 <User className="w-6 h-6 text-primary shrink-0" />
@@ -229,9 +229,6 @@ export default function ProfilePage() {
                             {participant.isHost && " (Host)"}
                           </span>
                           <span className="font-bold text-primary">{participant.score} pts</span>
-                          <span className="text-muted-foreground text-[10px]">
-                            {participant.wordsGuessed} guessed · {participant.roundsWon} rounds won
-                          </span>
                         </div>
                       ))}
                     </div>

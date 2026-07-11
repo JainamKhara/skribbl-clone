@@ -6,9 +6,43 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 
 ---
 
+## Screenshots
+
+Here is a look at the game interface and flows:
+
+### Welcome & Lobby
+
+**Starting Page**
+![Starting Page](public/screenshots/starting_page.png)
+
+**Lobby / Room Setup**
+![Room Page](public/screenshots/room_page.png)
+
+### Gameplay Loop
+
+**Word Choice**
+![Choose The Word](public/screenshots/choose_the_word.png)
+
+**Drawing Interface**
+![Drawing Interface](public/screenshots/drawing_interface.png)
+
+### Game Over, Stats & Leaderboard
+
+**Game Over Screen**
+![Game Over Page](public/screenshots/game_over_page.png)
+
+**Profile & History**
+![Profile Page](public/screenshots/profile_page.png)
+
+**Leaderboard**
+![Leaderboard Page](public/screenshots/leaderboard_page.png)
+
+---
+
 ## Features
 
 ### Core Gameplay
+
 - **Real-time drawing canvas** with multiple tools (pen, eraser, fill bucket, undo)
 - **Live guessing** via chat with instant feedback on close guesses
 - **Smart word hints** - letters progressively revealed as time runs out
@@ -17,12 +51,14 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 - **Random word selection** - 3 word choices per round
 
 ### Authentication & Identity
+
 - **Clerk Integration** - Sign in to save your profile and use your real profile picture
 - **Guest Support** - Play instantly without an account, guests get random generated avatars
 - **Profile Synchronization** - Real-time display of player profile images in lobby and scoreboard
 - **User Stats Tracking** - Games played, games won, total score stored per user
 
 ### Comprehensive Game History
+
 - **Full game history** - Every game is recorded with complete details
 - **Round-by-round breakdown** - See each round's word, drawer, and all guessers
 - **Detailed participant stats** - Words guessed, rounds won, host status, final rank
@@ -30,6 +66,7 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 - **Expandable game details** - Click to see full round history in profile page
 
 ### Multiplayer & Real-time
+
 - **Room-based system** - create or join rooms with a 6-character code
 - **2-8 players** per room
 - **Real-time sync** - drawing strokes, chat, timer, and game state all broadcast instantly
@@ -38,6 +75,7 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 - **Host controls** - only the room creator can start games and configure settings
 
 ### UI & Theming
+
 - **Dark/Light mode toggle** with distinct color themes:
   - Dark mode - Violet/purple accent on deep navy
   - Light mode - Warm orange accent on cream
@@ -47,6 +85,7 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 - **Animated feedback** - confetti on game over, smooth transitions, chat animations
 
 ### Leaderboard
+
 - **Global rankings** - top 50 players by total score
 - **Win rate tracking** - percentage of games won
 - **Games played counter** - total games for each player
@@ -57,16 +96,16 @@ A real-time multiplayer drawing and guessing game built with **Next.js 14**, **N
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Framework** | [Next.js 14](https://nextjs.org) | React framework with App Router |
-| **Authentication** | [Clerk](https://clerk.com) | User authentication and profile management |
-| **Database** | [Neon PostgreSQL](https://neon.tech) | Serverless PostgreSQL database |
-| **Real-time** | [Pusher](https://pusher.com) | Real-time pub/sub for game state |
-| **UI Components** | [shadcn/ui](https://ui.shadcn.com) + [Radix UI](https://radix-ui.com) | Polished, accessible components |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com) | Utility-first CSS framework |
-| **Icons** | [Lucide React](https://lucide.dev) | Beautiful, consistent icons |
-| **Canvas** | HTML5 Canvas API | Drawing functionality |
+| Layer              | Technology                                                            | Purpose                                    |
+| ------------------ | --------------------------------------------------------------------- | ------------------------------------------ |
+| **Framework**      | [Next.js 14](https://nextjs.org)                                      | React framework with App Router            |
+| **Authentication** | [Clerk](https://clerk.com)                                            | User authentication and profile management |
+| **Database**       | [Neon PostgreSQL](https://neon.tech)                                  | Serverless PostgreSQL database             |
+| **Real-time**      | [Pusher](https://pusher.com)                                          | Real-time pub/sub for game state           |
+| **UI Components**  | [shadcn/ui](https://ui.shadcn.com) + [Radix UI](https://radix-ui.com) | Polished, accessible components            |
+| **Styling**        | [Tailwind CSS v4](https://tailwindcss.com)                            | Utility-first CSS framework                |
+| **Icons**          | [Lucide React](https://lucide.dev)                                    | Beautiful, consistent icons                |
+| **Canvas**         | HTML5 Canvas API                                                      | Drawing functionality                      |
 
 ---
 
@@ -114,8 +153,6 @@ skribbl-clone/
 │   └── types/
 │       └── declarations.d.ts             # TypeScript declarations
 │
-├── database-migration.sql               # Full database schema
-├── fix-database.sql                     # Quick fix for type issues
 ├── .env.local                           # Environment variables
 ├── next.config.ts                       # Next.js configuration
 └── README.md                            # This file
@@ -161,62 +198,7 @@ PUSHER_APP_ID=your-pusher-app-id
 
 ### 3. Set Up Database
 
-Run this SQL in your Neon database:
-
-```sql
-CREATE TABLE IF NOT EXISTS profiles (
-  id VARCHAR(255) PRIMARY KEY,
-  username VARCHAR(255) NOT NULL,
-  avatar_index INTEGER DEFAULT 0,
-  games_played INTEGER DEFAULT 0,
-  games_won INTEGER DEFAULT 0,
-  total_score INTEGER DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS game_history (
-  id VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id VARCHAR(255) NOT NULL,
-  total_rounds INTEGER NOT NULL,
-  draw_time INTEGER NOT NULL,
-  player_count INTEGER NOT NULL,
-  winner_name VARCHAR(255),
-  winner_score INTEGER DEFAULT 0,
-  played_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS game_participants (
-  id SERIAL PRIMARY KEY,
-  game_id VARCHAR(255) REFERENCES game_history(id) ON DELETE CASCADE,
-  user_id VARCHAR(255) REFERENCES profiles(id) ON DELETE SET NULL,
-  player_name VARCHAR(255) NOT NULL,
-  score INTEGER DEFAULT 0,
-  rank INTEGER NOT NULL,
-  words_guessed INTEGER DEFAULT 0,
-  rounds_won INTEGER DEFAULT 0,
-  is_host BOOLEAN DEFAULT false
-);
-
-CREATE TABLE IF NOT EXISTS game_rounds (
-  id SERIAL PRIMARY KEY,
-  game_id VARCHAR(255) REFERENCES game_history(id) ON DELETE CASCADE,
-  round_number INTEGER NOT NULL,
-  word VARCHAR(255) NOT NULL,
-  drawer_name VARCHAR(255) NOT NULL,
-  drawer_id VARCHAR(255)
-);
-
-CREATE TABLE IF NOT EXISTS round_guessers (
-  id SERIAL PRIMARY KEY,
-  round_id INTEGER REFERENCES game_rounds(id) ON DELETE CASCADE,
-  player_name VARCHAR(255) NOT NULL,
-  player_id VARCHAR(255),
-  points_earned INTEGER DEFAULT 0,
-  time_to_guess INTEGER DEFAULT 0
-);
-```
-
-For a complete migration with existing data, see `fix-database.sql`.
+> Note: The database tables are automatically initialized and verified on application startup, so manual creation is not necessary.
 
 ### 4. Run the Dev Server
 
@@ -243,13 +225,13 @@ Open [http://localhost:3000](http://localhost:3000) and start playing!
 
 ## Game Configuration
 
-| Setting | Default | Range |
-|---------|---------|-------|
-| Players | 2 | 2-8 |
-| Rounds | 3 | 1-10 |
-| Draw Time | 80s | 30-120s |
-| Word Choices | 3 | - |
-| Choosing Time | 15s | - |
+| Setting       | Default | Range   |
+| ------------- | ------- | ------- |
+| Players       | 2       | 2-8     |
+| Rounds        | 3       | 1-10    |
+| Draw Time     | 80s     | 30-120s |
+| Word Choices  | 3       | -       |
+| Choosing Time | 15s     | -       |
 
 ---
 
@@ -257,71 +239,15 @@ Open [http://localhost:3000](http://localhost:3000) and start playing!
 
 ### Tables
 
-| Table | Purpose |
-|-------|---------|
-| `profiles` | User profile information from Clerk |
-| `game_history` | Overall game information and winner |
-| `game_participants` | Participant details for each game |
-| `game_rounds` | Round-by-round game details |
-| `round_guessers` | Players who guessed correctly in each round |
+| Table               | Purpose                                     |
+| ------------------- | ------------------------------------------- |
+| `profiles`          | User profile information from Clerk         |
+| `game_history`      | Overall game information and winner         |
+| `game_participants` | Participant details for each game           |
+| `game_rounds`       | Round-by-round game details                 |
+| `round_guessers`    | Players who guessed correctly in each round |
 
-See the full schema in `database-migration.sql`.
-
----
-
-## Troubleshooting
-
-### Database Errors
-
-**Error:** `relation "game_rounds" does not exist`
-
-Run the SQL from `database-migration.sql` to create missing tables.
-
-**Error:** `invalid input syntax for type integer: "uuid..."`
-
-Your `game_history.id` is UUID but `game_participants.game_id` is INTEGER. Run:
-
-```sql
-ALTER TABLE game_participants ALTER COLUMN game_id TYPE VARCHAR(255);
-```
-
-See `fix-database.sql` for the complete fix.
-
-### Game Issues
-
-**Issue:** "No one guessed the word" shows incorrectly
-
-This was fixed in `RoundEnd.tsx`. Ensure you have:
-
-```typescript
-.filter((p) => p.roundScore > 0 || p.hasGuessedCorrectly)
-```
-
----
-
-## Recent Enhancements
-
-### Profile System
-- Clerk profile picture integration (shows your actual picture)
-- Detailed game history with round-by-round breakdown
-- Statistics tracking (games played, games won, total score)
-- Expandable round details in profile page
-
-### Enhanced Game History
-- Round-by-round storage with words and guessers
-- Participant stats (words guessed, rounds won, host status)
-- Winner information stored for each game
-
-### Leaderboard Improvements
-- Avatar display instead of emoji
-- Podium visualization with medal icons
-- Win rate tracking
-- Responsive design
-
-### Bug Fixes
-- "No one guessed" display bug
-- Database type mismatch errors
-- Missing table error handling
+See the full schema initialization in [db.ts](src/lib/db.ts).
 
 ---
 
@@ -332,7 +258,7 @@ This was fixed in `RoundEnd.tsx`. Ensure you have:
 Edit `src/lib/words.ts`:
 
 ```typescript
-export const WORDS = ['apple', 'banana', 'cat', 'dog', /* ... */];
+export const WORDS = ["apple", "banana", "cat", "dog" /* ... */];
 ```
 
 ### Game Settings

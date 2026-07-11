@@ -253,7 +253,7 @@ export function useGameChannel(
       const endState: GameState = {
         ...state,
         phase: isGameOver ? "game-over" : "round-end",
-        players: updatedPlayers.map(p => ({ ...p, hasGuessedCorrectly: false, roundScore: 0 })),
+        players: updatedPlayers.map(p => ({ ...p, hasGuessedCorrectly: false })),
         timeRemaining: GAME_CONFIG.ROUND_END_DELAY,
         turnCount: newTurnCount,
         roundHistory: newRoundHistory,
@@ -304,7 +304,8 @@ export function useGameChannel(
             rank: i + 1,
             wordsGuessed: p.wordsGuessed || 0,
             roundsWon: p.roundsWon || 0,
-            isHost: p.isHost || false
+            isHost: p.isHost || false,
+            imageUrl: p.imageUrl || null
           })),
           rounds: roundsForSave
         }).catch(console.error);
